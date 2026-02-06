@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <title>Welcome - Device Enrollment</title>
+  <style>
+    :root {
+      --bg1: #0d1b2a;
+      --bg2: #1b263b;
+      --card: #22324d;
+      --accent: #fca311;
+      --text: #e0e1dd;
+      --muted: #9fb0c2;
+    }
+    body {
+      margin: 0;
+      font-family: "Georgia", "Times New Roman", serif;
+      background: radial-gradient(circle at 20% 20%, #1b2b4b, var(--bg1)) no-repeat fixed;
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+    }
+    .card {
+      background: linear-gradient(160deg, var(--card), #152238);
+      padding: 28px 30px;
+      border-radius: 14px;
+      width: min(460px, 92vw);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    h1 { margin: 0 0 8px 0; font-size: 22px; letter-spacing: 0.5px; }
+    p { margin: 0 0 18px 0; color: var(--muted); font-size: 14px; line-height: 1.4; }
+    button {
+      width: 100%;
+      margin-top: 14px;
+      padding: 10px 12px;
+      border: none;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #111827;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .output {
+      margin-top: 12px;
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 8px;
+      font-size: 13px;
+      min-height: 24px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Welcome</h1>
+    <p>This is a one-time device enrollment step. After enrolling, it will not appear again.</p>
+
+    <button id="enrollBtn">Enroll This Device</button>
+    <div class="output" id="result"></div>
+  </div>
+
+  <script>
+    function randomHex(len) {
+      const bytes = new Uint8Array(len / 2);
+      crypto.getRandomValues(bytes);
+      return Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    function deviceSealKey(user) { return "user_device_seal:" + user.toLowerCase(); }
+    function enrolledKey(user) { return "device_enrolled:" + user.toLowerCase(); }
+    function legacySealKey() { return "user_device_seal"; }
+    function legacyEnrolledKey() { return "device_enrolled"; }
+
+    const sessionUser = localStorage.getItem("sessionUser") || "";
+    const sessionToken = localStorage.getItem("sessionToken") || "";
+
+    if (!sessionUser || !sessionToken) {
+      document.getElementById("result").textContent = "No active session. Please login first.";
+    }
+
+    document.getElementById("enrollBtn").addEventListener("click", async () => {
+      if (!sessionUser || !sessionToken) {
+        document.getElementById("result").textContent = "No active session. Please login first.";
+        return;
+      }
+
+      const seal = randomHex(64);
+      localStorage.setItem(deviceSealKey(sessionUser), seal);
+      localStorage.setItem(enrolledKey(sessionUser), "1");
+      // Clean legacy keys to avoid cross-user leakage
+      localStorage.removeItem(legacySealKey());
+      localStorage.removeItem(legacyEnrolledKey());
+
+      const res = await fetch("login.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          action: "enroll_device",
+          username: sessionUser,
+          token: sessionToken,
+          seal: seal
+        })
+      });
+
+      const data = await res.json();
+      if (!data || !data.ok) {
+        document.getElementById("result").textContent = data && data.message ? data.message : "Enrollment failed";
+        return;
+      }
+
+      document.getElementById("result").textContent = "Device sealed successfully. Redirecting...";
+      setTimeout(() => { window.location.href = "panel.html"; }, 800);
+    });
+  </script>
+</body>
+</html>
